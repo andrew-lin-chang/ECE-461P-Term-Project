@@ -1,0 +1,5 @@
+# Python
+.venv/
+
+# Datasets are large
+*.tsv
