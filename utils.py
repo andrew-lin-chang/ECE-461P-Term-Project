@@ -5,6 +5,7 @@ import nltk
 from nltk.corpus import CorpusReader, stopwords, product_reviews_2
 from nltk.stem import WordNetLemmatizer
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 import string
 
 
@@ -92,12 +93,13 @@ def clean_text(text: str) -> str:
 
 def process_text(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Derive a processed text column
+    Derive a processed text column and a text length column
     """
 
     df = fill_missing_descriptions(df)
     df = combine_text(df)
     df = df.assign(text=df['text'].apply(clean_text))
+    df = df.assign(text_length=df['text'].str.len())
     return df
 
 def vectorize_text(df: pd.DataFrame) -> pd.DataFrame:
@@ -116,6 +118,18 @@ def vectorize_text(df: pd.DataFrame) -> pd.DataFrame:
     vectors_df = pd.DataFrame.from_records(vector_list, index=index_list)
     df = df.join(vectors_df)
     return df
+
+def scale_item_condition(dfs: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    """
+    Scale item condition fitted on the first dataframe
+    """
+
+    scaler = StandardScaler().fit(dfs[0].loc[:, 'item_condition_id'].to_numpy().reshape(-1, 1))
+    results = []
+    for df in dfs:
+        df = df.assign(scaled_item_condition=scaler.transform(df.loc[:, 'item_condition_id'].to_numpy().reshape(-1, 1)))
+        results.append(df)
+    return results
 
 def mark_brand_boolean(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -152,20 +166,24 @@ def convert_categories(df: pd.DataFrame) -> pd.DataFrame:
     df = pd.get_dummies(df, prefix='cat', columns=['category'], dtype=int)
     return df
 
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess(dfs: list[pd.DataFrame]) -> list[pd.DataFrame]:
     """
     Apply all preprocessing steps
     """
 
-    if 'price' in df.columns:
-        df = remove_pricezero(df)
-    df = process_text(df)
-    df = vectorize_text(df)
-    df = mark_brand_boolean(df)
-    df = convert_categories(df)
-    df = df.drop(['name', 'category_name', 'brand_name', 'item_description', 'text'], axis=1)
+    results = []
+    dfs2 = scale_item_condition(dfs)
+    for df in dfs2:
+        if 'price' in df.columns:
+            df = remove_pricezero(df)
+        df = process_text(df)
+        df = vectorize_text(df)
+        df = mark_brand_boolean(df)
+        df = convert_categories(df)
+        df = df.drop(['name', 'item_condition_id', 'category_name', 'brand_name', 'item_description', 'text'], axis=1)
+        results.append(df)
 
-    return df
+    return results
 
 def extract_from_trainset(train_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
